@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const allowedOrigin = "http://localhost:3001"; // change in production
+const allowedOrigin = process.env.ALLOWED_ORIGINS; // change in production
 
 export function proxy(request: NextRequest) {
     const origin = request.headers.get("origin");
