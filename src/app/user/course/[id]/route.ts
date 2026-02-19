@@ -13,19 +13,12 @@ import courseModel, { ICourse } from "@/models/course.model";
 import userModel, { IUser } from "@/models/user.model";
 import { uploadToYoutube } from "@/utils/uploadToYoutube";
 
-
 // =====================================================
 // 🔹 Shared Types
 // =====================================================
 
-interface RouteParams {
-    params: {
-        id: string;
-    };
-}
-
 type CourseDoc = HydratedDocument<ICourse>;
-
+type RouteContext = { params: Promise<{ id: string }> };
 
 // =====================================================
 // 🔹 UPDATE COURSE
@@ -35,12 +28,12 @@ export const PUT = withAuth(
     async (
         req: NextRequest,
         user: IUser,
-        { params }: RouteParams
+        context: RouteContext
     ) => {
         await connectDB();
 
         try {
-            const courseId = params.id;
+            const { id: courseId } = await context.params;
 
             if (!mongoose.isValidObjectId(courseId)) {
                 return errorResponse(400, "Invalid Course Id");
@@ -63,7 +56,7 @@ export const PUT = withAuth(
                 }
             });
 
-            if (updateFields.category && typeof updateFields.category === "string") {
+            if (typeof updateFields.category === "string") {
                 updateFields.category = updateFields.category
                     .trim()
                     .replace(/\s+/g, "-")
@@ -83,12 +76,7 @@ export const PUT = withAuth(
                 const bytes = await file.arrayBuffer();
                 const buffer = Buffer.from(bytes);
 
-                const tempPath = path.join(
-                    process.cwd(),
-                    "public",
-                    file.name
-                );
-
+                const tempPath = path.join(process.cwd(), "public", file.name);
                 await writeFile(tempPath, buffer);
 
                 const result = await cloudinary.uploader.upload(tempPath, {
@@ -99,9 +87,7 @@ export const PUT = withAuth(
                 fs.rmSync(tempPath);
 
                 if (course.thumbnail?.public_id) {
-                    await cloudinary.uploader.destroy(
-                        course.thumbnail.public_id
-                    );
+                    await cloudinary.uploader.destroy(course.thumbnail.public_id);
                 }
 
                 course.thumbnail = {
@@ -135,7 +121,6 @@ export const PUT = withAuth(
     ["INSTRUCTOR", "ADMIN"]
 );
 
-
 // =====================================================
 // 🔹 DELETE COURSE
 // =====================================================
@@ -144,12 +129,12 @@ export const DELETE = withAuth(
     async (
         _req: NextRequest,
         user: IUser,
-        { params }: RouteParams
+        context: RouteContext
     ) => {
         await connectDB();
 
         try {
-            const courseId = params.id;
+            const { id: courseId } = await context.params;
 
             if (!mongoose.isValidObjectId(courseId)) {
                 return errorResponse(400, "Invalid Course Id");
@@ -158,35 +143,25 @@ export const DELETE = withAuth(
             const course = await courseModel.findById(courseId) as CourseDoc | null;
 
             if (!course) {
-                return errorResponse(
-                    400,
-                    "No Course Exist For Given CourseId"
-                );
+                return errorResponse(400, "No Course Exist For Given CourseId");
             }
 
             const remarks: string[] = [];
 
-            // 🔹 Delete Course Thumbnail
             if (course.thumbnail?.public_id) {
-                await cloudinary.uploader.destroy(
-                    course.thumbnail.public_id
-                );
+                await cloudinary.uploader.destroy(course.thumbnail.public_id);
                 remarks.push("Deleted Course Thumbnail");
             }
 
-            // 🔹 Delete Lecture Thumbnails
             const lectureThumbnailIds = course.lectures
-                .map(lecture => lecture.thumbnail?.public_id)
+                .map(l => l.thumbnail?.public_id)
                 .filter((id): id is string => Boolean(id));
 
             if (lectureThumbnailIds.length > 0) {
-                await cloudinary.api.delete_resources(
-                    lectureThumbnailIds
-                );
+                await cloudinary.api.delete_resources(lectureThumbnailIds);
                 remarks.push("Deleted Lecture Thumbnails");
             }
 
-            // 🔹 Remove from Instructor
             await userModel.updateOne(
                 { _id: user._id },
                 { $pull: { createdCourses: { courseId } } }
@@ -209,7 +184,6 @@ export const DELETE = withAuth(
     ["INSTRUCTOR", "ADMIN"]
 );
 
-
 // =====================================================
 // 🔹 GET LECTURES
 // =====================================================
@@ -218,12 +192,12 @@ export const GET = withAuth(
     async (
         _req: NextRequest,
         _user: IUser,
-        { params }: RouteParams
+        context: RouteContext
     ) => {
         await connectDB();
 
         try {
-            const courseId = params.id;
+            const { id: courseId } = await context.params;
 
             if (!mongoose.isValidObjectId(courseId)) {
                 return errorResponse(400, "Invalid Course Id");
@@ -232,10 +206,7 @@ export const GET = withAuth(
             const course = await courseModel.findById(courseId);
 
             if (!course) {
-                return errorResponse(
-                    400,
-                    "No Course Exist for Provided CourseId"
-                );
+                return errorResponse(400, "No Course Exist for Provided CourseId");
             }
 
             return successResponse(
@@ -254,7 +225,6 @@ export const GET = withAuth(
     }
 );
 
-
 // =====================================================
 // 🔹 ADD LECTURE
 // =====================================================
@@ -263,12 +233,12 @@ export const POST = withAuth(
     async (
         req: NextRequest,
         _user: IUser,
-        { params }: RouteParams
+        context: RouteContext
     ) => {
         await connectDB();
 
         try {
-            const courseId = params.id;
+            const { id: courseId } = await context.params;
 
             if (!mongoose.isValidObjectId(courseId)) {
                 return errorResponse(400, "Invalid Course Id");
@@ -288,10 +258,7 @@ export const POST = withAuth(
                 !(file instanceof File && file.size > 0) &&
                 typeof youtubeLink !== "string"
             ) {
-                return errorResponse(
-                    400,
-                    "Provide youtube link or upload a file"
-                );
+                return errorResponse(400, "Provide youtube link or upload a file");
             }
 
             const course = await courseModel.findById(courseId) as CourseDoc | null;
@@ -300,23 +267,14 @@ export const POST = withAuth(
                 return errorResponse(400, "Course Doesn't Exist");
             }
 
-            // 🔥 If Video File Uploaded
             if (file instanceof File && file.size > 0) {
                 const bytes = await file.arrayBuffer();
                 const buffer = Buffer.from(bytes);
 
-                const tempPath = path.join(
-                    process.cwd(),
-                    "public",
-                    file.name
-                );
-
+                const tempPath = path.join(process.cwd(), "public", file.name);
                 await writeFile(tempPath, buffer);
 
-                const response = await uploadToYoutube(
-                    tempPath,
-                    title
-                );
+                const response = await uploadToYoutube(tempPath, title);
 
                 fs.rmSync(tempPath);
 
@@ -329,7 +287,6 @@ export const POST = withAuth(
                         secure_url: response.secure_url,
                     },
                 });
-
             } else {
                 course.lectures.push({
                     title,
@@ -339,14 +296,11 @@ export const POST = withAuth(
             }
 
             course.noOfLectures = course.lectures.length;
-
             await course.save();
 
-            return successResponse(
-                200,
-                "Lecture Added Successfully",
-                { Course: course }
-            );
+            return successResponse(200, "Lecture Added Successfully", {
+                Course: course,
+            });
 
         } catch (error) {
             return errorResponse(
