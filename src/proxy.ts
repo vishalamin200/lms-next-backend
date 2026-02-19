@@ -1,22 +1,33 @@
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
-const allowedOrigin = process.env.ALLOWED_ORIGINS; // change in production
+// Parse allowed origins once
+const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
+    .split(",")
+    .map(origin => origin.trim())
+    .filter(Boolean);
 
-export function proxy(request: NextRequest) {
+export function middleware(request: NextRequest) {
     const origin = request.headers.get("origin");
 
-    const isAllowedOrigin = origin === allowedOrigin;
+    const isAllowedOrigin =
+        origin !== null && allowedOrigins.includes(origin);
 
     // 🔥 Handle Preflight (OPTIONS)
     if (request.method === "OPTIONS") {
         const response = new NextResponse(null, { status: 204 });
 
         if (isAllowedOrigin) {
-            response.headers.set("Access-Control-Allow-Origin", origin!);
+            response.headers.set(
+                "Access-Control-Allow-Origin",
+                origin
+            );
         }
 
-        response.headers.set("Access-Control-Allow-Credentials", "true");
+        response.headers.set(
+            "Access-Control-Allow-Credentials",
+            "true"
+        );
         response.headers.set(
             "Access-Control-Allow-Methods",
             "GET,POST,PUT,PATCH,DELETE,OPTIONS"
@@ -33,14 +44,20 @@ export function proxy(request: NextRequest) {
     const response = NextResponse.next();
 
     if (isAllowedOrigin) {
-        response.headers.set("Access-Control-Allow-Origin", origin!);
+        response.headers.set(
+            "Access-Control-Allow-Origin",
+            origin
+        );
     }
 
-    response.headers.set("Access-Control-Allow-Credentials", "true");
+    response.headers.set(
+        "Access-Control-Allow-Credentials",
+        "true"
+    );
 
     return response;
 }
 
 export const config = {
-    matcher: "/user/:path*", // 👈 applies to all app/user/* APIs
+    matcher: "/user/:path*", // applies to all /user APIs
 };
