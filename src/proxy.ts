@@ -7,7 +7,7 @@ const allowedOrigins = (process.env.ALLOWED_ORIGINS || "")
     .map(origin => origin.trim())
     .filter(Boolean);
 
-export function middleware(request: NextRequest) {
+export function proxy(request: NextRequest) {
     const origin = request.headers.get("origin");
 
     const isAllowedOrigin =
