@@ -2,7 +2,7 @@ import { NextRequest } from "next/server";
 import { writeFile } from "fs/promises";
 import fs from "fs";
 import path from "path";
-import cloudinary from "cloudinary";
+import {cloudinary} from "@/lib/services"
 
 import connectDB from "@/lib/db";
 import { withAuth } from "@/lib/withAuth";
@@ -54,7 +54,7 @@ export const PATCH = withAuth(
                 const avatarPublicId = User?.avatar?.public_id;
 
                 if (avatarPublicId) {
-                    await cloudinary.v2.uploader.destroy(avatarPublicId);
+                    await cloudinary.uploader.destroy(avatarPublicId);
                 }
 
                 User.avatar.public_id = "";
@@ -72,7 +72,7 @@ export const PATCH = withAuth(
                 try {
                     // Remove old image
                     if (User?.avatar?.public_id) {
-                        await cloudinary.v2.uploader.destroy(
+                        await cloudinary.uploader.destroy(
                             User.avatar.public_id
                         );
                     }
@@ -90,7 +90,7 @@ export const PATCH = withAuth(
                     await writeFile(tempPath, buffer);
 
                     // Upload to Cloudinary
-                    const response = await cloudinary.v2.uploader.upload(
+                    const response = await cloudinary.uploader.upload(
                         tempPath,
                         {
                             folder: "Profile Picture",
