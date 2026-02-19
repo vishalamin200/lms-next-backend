@@ -1,5 +1,6 @@
-import { google } from "googleapis";
 import { Readable } from "stream";
+import { google } from "googleapis";
+
 // ======================================================
 // 🔹 OAuth2 Client Setup
 // ======================================================
@@ -28,8 +29,7 @@ const youtube = google.youtube({
 // ======================================================
 
 
-
-export async function uploadToYoutube(
+export async function uploadToYoutubeFromBuffer(
     buffer: Buffer,
     title: string
 ) {

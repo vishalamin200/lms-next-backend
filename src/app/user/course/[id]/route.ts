@@ -12,7 +12,7 @@ import { withAuth } from "@/lib/withAuth";
 
 import courseModel, { ICourse } from "@/models/course.model";
 import userModel, { IUser } from "@/models/user.model";
-import { uploadToYoutube } from "@/utils/uploadToYoutube";
+import {  uploadToYoutubeFromBuffer } from "@/utils/uploadToYoutube";
 
 // =====================================================
 // 🔹 Shared Types
@@ -331,7 +331,7 @@ export const POST = withAuth(
                     const buffer = Buffer.from(bytes);
 
                     // 🔥 Upload directly using buffer stream
-                    const response = await uploadToYoutube(
+                    const response = await uploadToYoutubeFromBuffer(
                         buffer,
                         title
                     );

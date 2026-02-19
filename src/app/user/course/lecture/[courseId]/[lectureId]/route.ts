@@ -1,8 +1,5 @@
 import { NextRequest } from "next/server";
 import mongoose, { HydratedDocument, Types } from "mongoose";
-import { writeFile } from "fs/promises";
-import fs from "fs";
-import path from "path";
 
 import connectDB from "@/lib/db";
 import { successResponse, errorResponse } from "@/lib/apiResponse";
@@ -14,7 +11,7 @@ import { IUser } from "@/models/user.model";
 import {
     deleteVideoFromYoutube,
     updateVideoTitleFromYoutube,
-    uploadToYoutube,
+    uploadToYoutubeFromBuffer,
 } from "@/utils/uploadToYoutube";
 
 // =============================================
@@ -148,14 +145,17 @@ export const PUT = withAuth(
                 return errorResponse(400, "Invalid Id Provided");
             }
 
-            const course = await courseModel.findById(courseId) as CourseDoc | null;
+            const course = (await courseModel.findById(
+                courseId
+            )) as CourseDoc | null;
 
             if (!course) {
                 return errorResponse(400, "Course Doesn't Exist");
             }
 
             const lecture = course.lectures.find(
-                (lec: ILecture) => lec._id?.toString() === lectureId
+                (lec: ILecture) =>
+                    lec._id?.toString() === lectureId
             );
 
             if (!lecture) {
@@ -169,10 +169,14 @@ export const PUT = withAuth(
             const youtubeLink = formData.get("youtubeLink");
             const file = formData.get("video");
 
+            // =================================================
             // 🔹 Update Text Fields
+            // =================================================
+
             if (typeof title === "string") {
                 lecture.title = title;
 
+                // Update YouTube title if video exists
                 if (lecture.video?.public_id) {
                     try {
                         await updateVideoTitleFromYoutube(
@@ -180,7 +184,10 @@ export const PUT = withAuth(
                             title
                         );
                     } catch (err) {
-                        console.error("Error updating YouTube title:", err);
+                        console.error(
+                            "Error updating YouTube title:",
+                            err
+                        );
                     }
                 }
             }
@@ -193,20 +200,21 @@ export const PUT = withAuth(
                 lecture.youtubeLink = youtubeLink;
             }
 
-            // 🔥 If New Video Provided
+            // =================================================
+            // 🔥 If New Video Provided (SERVERLESS SAFE)
+            // =================================================
+
             if (file instanceof File && file.size > 0) {
                 const bytes = await file.arrayBuffer();
                 const buffer = Buffer.from(bytes);
 
-                const tempPath = path.join(process.cwd(), "public", file.name);
-                await writeFile(tempPath, buffer);
-
-                const result = await uploadToYoutube(
-                    tempPath,
-                    typeof title === "string" ? title : lecture.title
-                );
-
-                fs.rmSync(tempPath);
+                const result =
+                    await uploadToYoutubeFromBuffer(
+                        buffer,
+                        typeof title === "string"
+                            ? title
+                            : lecture.title
+                    );
 
                 // 🔥 Delete old YouTube video
                 if (lecture.video?.public_id) {
@@ -215,7 +223,10 @@ export const PUT = withAuth(
                             lecture.video.public_id
                         );
                     } catch (err) {
-                        console.error("Error deleting old YouTube video:", err);
+                        console.error(
+                            "Error deleting old YouTube video:",
+                            err
+                        );
                     }
                 }
 
@@ -223,6 +234,9 @@ export const PUT = withAuth(
                     public_id: result.public_id,
                     secure_url: result.secure_url,
                 };
+
+                // If new video uploaded, remove manual youtubeLink
+                lecture.youtubeLink = "";
             }
 
             const updatedCourse = await course.save();
@@ -232,14 +246,16 @@ export const PUT = withAuth(
                 "Lecture Updated Successfully",
                 updatedCourse
             );
-
         } catch (error) {
             return errorResponse(
                 400,
                 "Error In Updating Lecture",
-                error instanceof Error ? error.message : "Unknown Error"
+                error instanceof Error
+                    ? error.message
+                    : "Unknown Error"
             );
         }
     },
     ["INSTRUCTOR", "ADMIN"]
 );
+
