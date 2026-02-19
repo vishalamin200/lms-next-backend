@@ -3,21 +3,21 @@ import { successResponse, errorResponse } from "@/lib/apiResponse";
 import connectDB from "@/lib/db";
 import userModel from "@/models/user.model";
 
-interface RouteParams {
-    params: {
-        userId: string;
-        token: string;
-    };
-}
+
 
 export async function POST(
     req: NextRequest,
-    { params }: RouteParams
+    context: {
+        params: Promise<{
+            userId: string;
+            token: string;
+        }>;
+    }
 ) {
     await connectDB();
 
     try {
-        const { userId, token } = params;
+        const { userId, token } = await context.params;
         const { newPassword } = await req.json();
 
         // 🔹 Validate new password
@@ -73,3 +73,4 @@ export async function POST(
         );
     }
 }
+
