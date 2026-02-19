@@ -1,23 +1,19 @@
 import { cloudinary } from "@/lib/services";
-import fs from "fs";
-import { writeFile } from "fs/promises";
 import { NextRequest } from "next/server";
-import path from "path";
 
 import connectDB from "@/lib/db";
 import { withAuth } from "@/lib/withAuth";
 import { errorResponse, successResponse } from "@/lib/apiResponse";
 
 import courseModel from "@/models/course.model";
-import userModel from "@/models/user.model";
-
+import userModel, { IUser } from "@/models/user.model";
 
 // =======================================================
 // 🔹 CREATE COURSE (INSTRUCTOR / ADMIN)
 // =======================================================
 
 export const POST = withAuth(
-    async (req: NextRequest, user) => {
+    async (req: NextRequest, user: IUser) => {
         await connectDB();
 
         try {
@@ -31,32 +27,13 @@ export const POST = withAuth(
             const file = formData.get("thumbnail") as File | null;
 
             // 🔹 Validate
-
-            if (!topic) {
-                return errorResponse(400, "Topic is required");
-            }
-
-            if (!description) {
-                return errorResponse(400, "Description is required");
-            }
-
-            if (!category) {
-                return errorResponse(400, "Category is required");
-            }
-
-            if (!createdBy) {
-                return errorResponse(400, "CreatedBy is required");
-            }
-
-            if (!creatorEmail) {
-                return errorResponse(400, "Email is required");
-            }
-
-            if (!file) {
+            if (!topic) return errorResponse(400, "Topic is required");
+            if (!description) return errorResponse(400, "Description is required");
+            if (!category) return errorResponse(400, "Category is required");
+            if (!createdBy) return errorResponse(400, "CreatedBy is required");
+            if (!creatorEmail) return errorResponse(400, "Email is required");
+            if (!file || file.size === 0)
                 return errorResponse(400, "Thumbnail is required");
-            }
-
-
 
             // 🔹 Format category
             const formattedCategory = category
@@ -74,43 +51,48 @@ export const POST = withAuth(
             });
 
             if (!newCourse) {
-                return errorResponse(
-                    400,
-                    "Error In Creating New Course"
-                );
+                return errorResponse(400, "Error In Creating New Course");
             }
 
-            // 🔥 Handle thumbnail upload
+            // =====================================================
+            // 🔥 SERVERLESS SAFE THUMBNAIL UPLOAD
+            // =====================================================
+
             const bytes = await file.arrayBuffer();
             const buffer = Buffer.from(bytes);
 
-            const tempPath = path.join(
-                process.cwd(),
-                "public",
-                file.name
-            );
+            const uploadResult = await new Promise<{
+                public_id: string;
+                secure_url: string;
+            }>((resolve, reject) => {
+                const stream = cloudinary.uploader.upload_stream(
+                    {
+                        folder: "courseThumbnail",
+                        context: { alt: "Coursethumbnail" },
+                    },
+                    (error, result) => {
+                        if (error || !result) {
+                            reject(error);
+                        } else {
+                            resolve({
+                                public_id: result.public_id,
+                                secure_url: result.secure_url,
+                            });
+                        }
+                    }
+                );
 
-            await writeFile(tempPath, buffer);
+                stream.end(buffer);
+            });
 
-            const result = await cloudinary.uploader.upload(
-                tempPath,
-                {
-                    folder: "courseThumbnail",
-                    context: { alt: "Coursethumbnail" },
-                }
-            );
-
-            // 🔹 Save thumbnail info
-            if (!newCourse.thumbnail) {
-                newCourse.thumbnail = {} as { public_id: string; secure_url: string };
+            if(!newCourse.thumbnail){
+                newCourse.thumbnail = {}
             }
-            newCourse.thumbnail.public_id = result.public_id;
-            newCourse.thumbnail.secure_url = result.secure_url;
+
+            newCourse.thumbnail.public_id = uploadResult.public_id;
+            newCourse.thumbnail.secure_url = uploadResult.secure_url;
 
             await newCourse.save();
-
-            // Remove temp file
-            fs.rmSync(tempPath);
 
             // 🔥 Save course reference in instructor
             const instructor = await userModel.findById(user._id);
@@ -128,18 +110,16 @@ export const POST = withAuth(
                 "Course Created Successfully",
                 newCourse
             );
-
         } catch (error) {
             return errorResponse(
                 400,
                 "Error in Creating Course",
-                (error as Error).message
+                error instanceof Error ? error.message : "Unknown Error"
             );
         }
     },
-    ["INSTRUCTOR", "ADMIN"] // 🔥 Role protection
+    ["INSTRUCTOR", "ADMIN"]
 );
-
 
 // =======================================================
 // 🔹 VIEW COURSES (PUBLIC)
@@ -156,12 +136,11 @@ export async function GET() {
             "Fetch Courses Successfully",
             allCourses
         );
-
     } catch (error) {
         return errorResponse(
             400,
             "Error In Fetch Courses from Database",
-            (error as Error).message
+            error instanceof Error ? error.message : "Unknown Error"
         );
     }
 }

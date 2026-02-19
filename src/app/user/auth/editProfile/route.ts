@@ -1,8 +1,5 @@
 import { NextRequest } from "next/server";
-import { writeFile } from "fs/promises";
-import fs from "fs";
-import path from "path";
-import {cloudinary} from "@/lib/services"
+import { cloudinary } from "@/lib/services";
 
 import connectDB from "@/lib/db";
 import { withAuth } from "@/lib/withAuth";
@@ -40,10 +37,7 @@ export const PATCH = withAuth(
             );
 
             if (!User) {
-                return errorResponse(
-                    400,
-                    "Please Logged In Again, And Try"
-                );
+                return errorResponse(400, "Please Logged In Again, And Try");
             }
 
             // =====================================================
@@ -65,79 +59,68 @@ export const PATCH = withAuth(
             }
 
             // =====================================================
-            // 🔥 UPDATE PROFILE IMAGE
+            // 🔥 UPDATE PROFILE IMAGE (SERVERLESS SAFE)
             // =====================================================
 
             if (file && file.size > 0) {
                 try {
-                    // Remove old image
+                    // 🔹 Remove old image
                     if (User?.avatar?.public_id) {
-                        await cloudinary.uploader.destroy(
-                            User.avatar.public_id
-                        );
+                        await cloudinary.uploader.destroy(User.avatar.public_id);
                     }
 
-                    // Save temporary file
                     const bytes = await file.arrayBuffer();
                     const buffer = Buffer.from(bytes);
 
-                    const tempPath = path.join(
-                        process.cwd(),
-                        "public",
-                        file.name
-                    );
-
-                    await writeFile(tempPath, buffer);
-
-                    // Upload to Cloudinary
-                    const response = await cloudinary.uploader.upload(
-                        tempPath,
-                        {
-                            folder: "Profile Picture",
-                            transformation: [
-                                {
-                                    width: 200,
-                                    height: 200,
-                                    gravity: "face",
-                                    crop: "fill",
-                                },
-                            ],
-                            context: { alt: "Profile Picture" },
-                        }
-                    );
-
-                    fs.rmSync(tempPath);
-
-                    if (!response.public_id) {
-                        return errorResponse(
-                            501,
-                            "Error In Updating New Profile Picture, Please Try Again"
+                    // 🔹 Upload using stream (NO FILESYSTEM)
+                    const uploadResult = await new Promise<{
+                        public_id: string;
+                        secure_url: string;
+                    }>((resolve, reject) => {
+                        const stream = cloudinary.uploader.upload_stream(
+                            {
+                                folder: "Profile Picture",
+                                transformation: [
+                                    {
+                                        width: 200,
+                                        height: 200,
+                                        gravity: "face",
+                                        crop: "fill",
+                                    },
+                                ],
+                                context: { alt: "Profile Picture" },
+                            },
+                            (error, result) => {
+                                if (error || !result) {
+                                    reject(error);
+                                } else {
+                                    resolve({
+                                        public_id: result.public_id,
+                                        secure_url: result.secure_url,
+                                    });
+                                }
+                            }
                         );
-                    }
 
-                    User.avatar.public_id = response.public_id;
-                    User.avatar.secure_url = response.secure_url;
+                        stream.end(buffer);
+                    });
+
+                    User.avatar.public_id = uploadResult.public_id;
+                    User.avatar.secure_url = uploadResult.secure_url;
 
                     await User.save();
 
                     const userObj = User.toObject();
-                    const { password, ...UserWithoutPassword } =
-                        userObj;
+                    const { password, ...UserWithoutPassword } = userObj;
 
-                    return successResponse(
-                        200,
-                        "Profile Updated Successfully",
-                        {
-                            User: UserWithoutPassword,
-                        }
-                    );
+                    return successResponse(200, "Profile Updated Successfully", {
+                        User: UserWithoutPassword,
+                    });
                 } catch (error) {
                     return errorResponse(
                         400,
                         "Error in Uploading Profile Picture",
-                        error instanceof Error
-                            ? error.message
-                            : "Unknown Error"
+                        error instanceof Error ? error.message : "Unknown Error"
                     );
                 }
             }
@@ -146,27 +129,18 @@ export const PATCH = withAuth(
             // 🔥 PROFILE UPDATED WITHOUT IMAGE
             // =====================================================
 
-            await User.save();
-
             const userObj = User.toObject();
-            const { password, ...UserWithoutPassword } =
-                userObj;
+            const { password, ...UserWithoutPassword } = userObj;
 
-            return successResponse(
-                200,
-                "Profile Updated Successfully",
-                {
-                    Remark: "Profile Picture is Not Changed",
-                    User: UserWithoutPassword,
-                }
-            );
+            return successResponse(200, "Profile Updated Successfully", {
+                Remark: "Profile Picture is Not Changed",
+                User: UserWithoutPassword,
+            });
         } catch (error) {
             return errorResponse(
                 400,
                 "Error In Edit Profile",
-                error instanceof Error
-                    ? error.message
-                    : "Unknown Error"
+                error instanceof Error ? error.message : "Unknown Error"
             );
         }
     }

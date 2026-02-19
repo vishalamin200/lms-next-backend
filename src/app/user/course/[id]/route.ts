@@ -39,7 +39,9 @@ export const PUT = withAuth(
                 return errorResponse(400, "Invalid Course Id");
             }
 
-            const course = await courseModel.findById(courseId) as CourseDoc | null;
+            const course = (await courseModel.findById(
+                courseId
+            )) as CourseDoc | null;
 
             if (!course) {
                 return errorResponse(404, "Course Doesn't Exist");
@@ -56,6 +58,7 @@ export const PUT = withAuth(
                 }
             });
 
+            // 🔹 Normalize category
             if (typeof updateFields.category === "string") {
                 updateFields.category = updateFields.category
                     .trim()
@@ -63,6 +66,7 @@ export const PUT = withAuth(
                     .toLowerCase();
             }
 
+            // 🔹 Update non-thumbnail fields
             if (Object.keys(updateFields).length > 0) {
                 await courseModel.findByIdAndUpdate(
                     courseId,
@@ -71,45 +75,81 @@ export const PUT = withAuth(
                 );
             }
 
-            // 🔥 Handle Thumbnail Update
+            // =====================================================
+            // 🔥 SERVERLESS SAFE THUMBNAIL UPDATE
+            // =====================================================
+
             if (file instanceof File && file.size > 0) {
-                const bytes = await file.arrayBuffer();
-                const buffer = Buffer.from(bytes);
+                try {
+                    const bytes = await file.arrayBuffer();
+                    const buffer = Buffer.from(bytes);
 
-                const tempPath = path.join(process.cwd(), "public", file.name);
-                await writeFile(tempPath, buffer);
+                    const uploadResult = await new Promise<{
+                        public_id: string;
+                        secure_url: string;
+                    }>((resolve, reject) => {
+                        const stream = cloudinary.uploader.upload_stream(
+                            {
+                                folder: "courseThumbnail",
+                                context: { alt: "coursethumbnail" },
+                            },
+                            (error, result) => {
+                                if (error || !result) {
+                                    reject(error);
+                                } else {
+                                    resolve({
+                                        public_id: result.public_id,
+                                        secure_url: result.secure_url,
+                                    });
+                                }
+                            }
+                        );
 
-                const result = await cloudinary.uploader.upload(tempPath, {
-                    folder: "courseThumbnail",
-                    context: { alt: "coursethumbnail" },
-                });
+                        stream.end(buffer);
+                    });
 
-                fs.rmSync(tempPath);
+                    // 🔹 Remove old thumbnail from Cloudinary
+                    if (course.thumbnail?.public_id) {
+                        await cloudinary.uploader.destroy(
+                            course.thumbnail.public_id
+                        );
+                    }
 
-                if (course.thumbnail?.public_id) {
-                    await cloudinary.uploader.destroy(course.thumbnail.public_id);
+                    course.thumbnail = {
+                        public_id: uploadResult.public_id,
+                        secure_url: uploadResult.secure_url,
+                    };
+
+                    const updatedCourse = await course.save();
+
+                    return successResponse(
+                        200,
+                        "Course Updated Successfully",
+                        {
+                            remark: "Thumbnail is Updated",
+                            updatedCourse,
+                        }
+                    );
+                } catch (error) {
+                    return errorResponse(
+                        400,
+                        "Error in Uploading Thumbnail",
+                        error instanceof Error ? error.message : "Unknown Error"
+                    );
                 }
-
-                course.thumbnail = {
-                    public_id: result.public_id,
-                    secure_url: result.secure_url,
-                };
-
-                const updatedCourse = await course.save();
-
-                return successResponse(200, "Course Updated Successfully", {
-                    remark: "Thumbnail is Updated",
-                    updatedCourse,
-                });
             }
 
+            // 🔹 No thumbnail update
             const updatedCourse = await courseModel.findById(courseId);
 
-            return successResponse(200, "Course Updated Successfully", {
-                remark: "No Updation in Thumbnail",
-                updatedCourse,
-            });
-
+            return successResponse(
+                200,
+                "Course Updated Successfully",
+                {
+                    remark: "No Updation in Thumbnail",
+                    updatedCourse,
+                }
+            );
         } catch (error) {
             return errorResponse(
                 400,
@@ -120,6 +160,7 @@ export const PUT = withAuth(
     },
     ["INSTRUCTOR", "ADMIN"]
 );
+
 
 // =====================================================
 // 🔹 DELETE COURSE
