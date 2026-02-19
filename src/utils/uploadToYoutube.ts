@@ -1,6 +1,5 @@
-import fs from "fs";
 import { google } from "googleapis";
-
+import { Readable } from "stream";
 // ======================================================
 // 🔹 OAuth2 Client Setup
 // ======================================================
@@ -28,53 +27,35 @@ const youtube = google.youtube({
 // 🔹 Upload Video To YouTube
 // ======================================================
 
+
+
 export async function uploadToYoutube(
-    filePath: string,
-    title: string = "Lecture Video",
-    description: string = ""
-): Promise<{
-    public_id: string;
-    secure_url: string;
-}> {
-    try {
-        const response = await youtube.videos.insert({
-            part: ["snippet", "status"],
-            requestBody: {
-                snippet: {
-                    title,
-                    description,
-                },
-                status: {
-                    privacyStatus: "unlisted",
-                },
+    buffer: Buffer,
+    title: string
+) {
+    const response = await youtube.videos.insert({
+        part: ["snippet", "status"],
+        requestBody: {
+            snippet: {
+                title,
             },
-            media: {
-                body: fs.createReadStream(filePath),
+            status: {
+                privacyStatus: "unlisted",
             },
-        });
+        },
+        media: {
+            body: Readable.from(buffer),
+        },
+    });
 
-        const videoId = response.data.id;
+    const videoId = response.data.id;
 
-        if (!videoId) {
-            throw new Error("Failed to upload video");
-        }
-
-        return {
-            public_id: videoId,
-            secure_url: `https://www.youtube.com/watch?v=${videoId}`,
-        };
-
-    } catch (error: unknown) {
-        if (error && typeof error === "object" && "response" in error && error.response && typeof error.response === "object" && "data" in error.response) {
-            console.error("Error in video upload to YouTube:", error.response.data);
-        } else if (error instanceof Error) {
-            console.error("Error in video upload to YouTube:", error.message);
-        } else {
-            console.error("Error in video upload to YouTube:", error);
-        }
-        throw error;
-    }
+    return {
+        public_id: videoId,
+        secure_url: `https://www.youtube.com/watch?v=${videoId}`,
+    };
 }
+
 
 // ======================================================
 // 🔹 Delete Video From YouTube

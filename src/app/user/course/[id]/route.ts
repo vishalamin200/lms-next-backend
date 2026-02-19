@@ -1,9 +1,10 @@
 import { v2 as cloudinary } from "cloudinary";
-import fs from "fs";
-import { writeFile } from "fs/promises";
+
+
+
 import mongoose, { HydratedDocument } from "mongoose";
 import { NextRequest } from "next/server";
-import path from "path";
+
 
 import { errorResponse, successResponse } from "@/lib/apiResponse";
 import connectDB from "@/lib/db";
@@ -270,6 +271,8 @@ export const GET = withAuth(
 // 🔹 ADD LECTURE
 // =====================================================
 
+
+
 export const POST = withAuth(
     async (
         req: NextRequest,
@@ -290,6 +293,8 @@ export const POST = withAuth(
             const title = formData.get("title");
             const youtubeLink = formData.get("youtubeLink");
             const file = formData.get("video");
+            const description =
+                (formData.get("description") as string) || "";
 
             if (typeof title !== "string" || !title.trim()) {
                 return errorResponse(400, "Title Is Required");
@@ -299,39 +304,63 @@ export const POST = withAuth(
                 !(file instanceof File && file.size > 0) &&
                 typeof youtubeLink !== "string"
             ) {
-                return errorResponse(400, "Provide youtube link or upload a file");
+                return errorResponse(
+                    400,
+                    "Provide youtube link or upload a file"
+                );
             }
 
-            const course = await courseModel.findById(courseId) as CourseDoc | null;
+            const course = (await courseModel.findById(
+                courseId
+            )) as CourseDoc | null;
 
             if (!course) {
-                return errorResponse(400, "Course Doesn't Exist");
+                return errorResponse(
+                    400,
+                    "Course Doesn't Exist"
+                );
             }
 
+            // =====================================================
+            // 🔥 VIDEO UPLOAD (SERVERLESS SAFE)
+            // =====================================================
+
             if (file instanceof File && file.size > 0) {
-                const bytes = await file.arrayBuffer();
-                const buffer = Buffer.from(bytes);
+                try {
+                    const bytes = await file.arrayBuffer();
+                    const buffer = Buffer.from(bytes);
 
-                const tempPath = path.join(process.cwd(), "public", file.name);
-                await writeFile(tempPath, buffer);
+                    // 🔥 Upload directly using buffer stream
+                    const response = await uploadToYoutube(
+                        buffer,
+                        title
+                    );
 
-                const response = await uploadToYoutube(tempPath, title);
-
-                fs.rmSync(tempPath);
-
-                course.lectures.push({
-                    title,
-                    description: (formData.get("description") as string) || "",
-                    youtubeLink: "",
-                    video: {
-                        public_id: response.public_id,
-                        secure_url: response.secure_url,
-                    },
-                });
+                    course.lectures.push({
+                        title,
+                        description,
+                        youtubeLink: "",
+                        video: {
+                            public_id: response.public_id,
+                            secure_url: response.secure_url,
+                        },
+                    });
+                } catch (error) {
+                    return errorResponse(
+                        400,
+                        "Error In Uploading Video",
+                        error instanceof Error
+                            ? error.message
+                            : "Unknown Error"
+                    );
+                }
             } else {
+                // =====================================================
+                // 🔹 YOUTUBE LINK ONLY
+                // =====================================================
                 course.lectures.push({
                     title,
-                    description: (formData.get("description") as string) || "",
+                    description,
                     youtubeLink: youtubeLink as string,
                 });
             }
@@ -339,17 +368,21 @@ export const POST = withAuth(
             course.noOfLectures = course.lectures.length;
             await course.save();
 
-            return successResponse(200, "Lecture Added Successfully", {
-                Course: course,
-            });
-
+            return successResponse(
+                200,
+                "Lecture Added Successfully",
+                { Course: course }
+            );
         } catch (error) {
             return errorResponse(
                 400,
                 "Error In Adding Lecture Video",
-                error instanceof Error ? error.message : "Unknown Error"
+                error instanceof Error
+                    ? error.message
+                    : "Unknown Error"
             );
         }
     },
     ["INSTRUCTOR", "ADMIN"]
 );
+
