@@ -1,0 +1,135 @@
+import fs from "fs";
+import { google } from "googleapis";
+
+// ======================================================
+// 🔹 OAuth2 Client Setup
+// ======================================================
+
+const oauth2Client = new google.auth.OAuth2(
+    process.env.GOOGLE_YOUTUBE_CLIENT_ID,
+    process.env.GOOGLE_YOUTUBE_CLIENT_SECRET,
+    process.env.GOOGLE_YOUTUBE_REDIRECT_URI
+);
+
+oauth2Client.setCredentials({
+    refresh_token: process.env.GOOGLE_YOUTUBE_REFRESH_TOKEN,
+});
+
+// ======================================================
+// 🔹 YouTube Client
+// ======================================================
+
+const youtube = google.youtube({
+    version: "v3",
+    auth: oauth2Client,
+});
+
+// ======================================================
+// 🔹 Upload Video To YouTube
+// ======================================================
+
+export async function uploadToYoutube(
+    filePath: string,
+    title: string = "Lecture Video",
+    description: string = ""
+): Promise<{
+    public_id: string;
+    secure_url: string;
+}> {
+    try {
+        const response = await youtube.videos.insert({
+            part: ["snippet", "status"],
+            requestBody: {
+                snippet: {
+                    title,
+                    description,
+                },
+                status: {
+                    privacyStatus: "unlisted",
+                },
+            },
+            media: {
+                body: fs.createReadStream(filePath),
+            },
+        });
+
+        const videoId = response.data.id;
+
+        if (!videoId) {
+            throw new Error("Failed to upload video");
+        }
+
+        return {
+            public_id: videoId,
+            secure_url: `https://www.youtube.com/watch?v=${videoId}`,
+        };
+
+    } catch (error: unknown) {
+        if (error && typeof error === "object" && "response" in error && error.response && typeof error.response === "object" && "data" in error.response) {
+            console.error("Error in video upload to YouTube:", error.response.data);
+        } else if (error instanceof Error) {
+            console.error("Error in video upload to YouTube:", error.message);
+        } else {
+            console.error("Error in video upload to YouTube:", error);
+        }
+        throw error;
+    }
+}
+
+// ======================================================
+// 🔹 Delete Video From YouTube
+// ======================================================
+
+export async function deleteVideoFromYoutube(
+    videoId: string
+): Promise<void> {
+    try {
+        await youtube.videos.delete({
+            id: videoId,
+        });
+    } catch (error) {
+        console.error("Error deleting video:", error);
+        throw error;
+    }
+}
+
+// ======================================================
+// 🔹 Update Video Title
+// ======================================================
+
+export async function updateVideoTitleFromYoutube(
+    videoId: string,
+    newTitle: string
+): Promise<void> {
+    try {
+        const listResponse = await youtube.videos.list({
+            part: ["snippet"],
+            id: [videoId],
+        });
+        const { data } = listResponse;
+
+        if (!data?.items || data.items.length === 0) {
+            throw new Error("Video not found with this videoId");
+        }
+
+        const video = data.items[0];
+
+        if (video.snippet?.title === newTitle.trim()) {
+            return;
+        }
+
+        video.snippet!.title = newTitle;
+
+        await youtube.videos.update({
+            part: ["snippet"],
+            requestBody: {
+                id: videoId,
+                snippet: video.snippet,
+            },
+        });
+
+    } catch (error) {
+        console.error("Error updating video title:", error);
+        throw error;
+    }
+}
