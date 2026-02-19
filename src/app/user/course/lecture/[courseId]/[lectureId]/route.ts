@@ -1,5 +1,5 @@
 import { NextRequest } from "next/server";
-import mongoose, { HydratedDocument } from "mongoose";
+import mongoose, { HydratedDocument, Types } from "mongoose";
 import { writeFile } from "fs/promises";
 import fs from "fs";
 import path from "path";
@@ -10,7 +10,6 @@ import { withAuth } from "@/lib/withAuth";
 
 import courseModel, { ICourse } from "@/models/course.model";
 import { IUser } from "@/models/user.model";
-import  {  Types } from "mongoose";
 
 import {
     deleteVideoFromYoutube,
@@ -18,17 +17,16 @@ import {
     uploadToYoutube,
 } from "@/utils/uploadToYoutube";
 
-
 // =============================================
 // 🔹 Types
 // =============================================
 
-interface RouteParams {
-    params: {
+type RouteContext = {
+    params: Promise<{
         courseId: string;
         lectureId: string;
-    };
-}
+    }>;
+};
 
 export interface IVideo {
     public_id?: string | null;
@@ -51,8 +49,6 @@ export interface ILecture {
 
 type CourseDoc = HydratedDocument<ICourse>;
 
-
-
 // =============================================
 // 🔹 DELETE LECTURE
 // =============================================
@@ -61,12 +57,12 @@ export const DELETE = withAuth(
     async (
         _req: NextRequest,
         _user: IUser,
-        { params }: RouteParams
+        context: RouteContext
     ) => {
         await connectDB();
 
         try {
-            const { courseId, lectureId } = params;
+            const { courseId, lectureId } = await context.params;
 
             if (
                 !mongoose.isValidObjectId(courseId) ||
@@ -98,20 +94,15 @@ export const DELETE = withAuth(
             // 🔥 Delete YouTube Video
             if (lecture.video?.public_id) {
                 try {
-                    await deleteVideoFromYoutube(
-                        lecture.video.public_id
-                    );
+                    await deleteVideoFromYoutube(lecture.video.public_id);
                 } catch (err) {
-                    console.error(
-                        "Error deleting video from YouTube:",
-                        err
-                    );
+                    console.error("Error deleting video from YouTube:", err);
                 }
             }
 
             // 🔥 Remove Lecture
             course.lectures = course.lectures.filter(
-                (lec: ILecture) => lec._id?.toString() !== lectureId && lec
+                (lec: ILecture) => lec._id?.toString() !== lectureId
             );
 
             course.noOfLectures = course.lectures.length;
@@ -135,7 +126,6 @@ export const DELETE = withAuth(
     ["INSTRUCTOR", "ADMIN"]
 );
 
-
 // =============================================
 // 🔹 UPDATE LECTURE
 // =============================================
@@ -144,12 +134,12 @@ export const PUT = withAuth(
     async (
         req: NextRequest,
         _user: IUser,
-        { params }: RouteParams
+        context: RouteContext
     ) => {
         await connectDB();
 
         try {
-            const { courseId, lectureId } = params;
+            const { courseId, lectureId } = await context.params;
 
             if (
                 !mongoose.isValidObjectId(courseId) ||
@@ -161,10 +151,7 @@ export const PUT = withAuth(
             const course = await courseModel.findById(courseId) as CourseDoc | null;
 
             if (!course) {
-                return errorResponse(
-                    400,
-                    "Course Doesn't Exist"
-                );
+                return errorResponse(400, "Course Doesn't Exist");
             }
 
             const lecture = course.lectures.find(
@@ -172,10 +159,7 @@ export const PUT = withAuth(
             );
 
             if (!lecture) {
-                return errorResponse(
-                    400,
-                    "Lecture Doesn't Exist"
-                );
+                return errorResponse(400, "Lecture Doesn't Exist");
             }
 
             const formData = await req.formData();
@@ -196,10 +180,7 @@ export const PUT = withAuth(
                             title
                         );
                     } catch (err) {
-                        console.error(
-                            "Error updating YouTube title:",
-                            err
-                        );
+                        console.error("Error updating YouTube title:", err);
                     }
                 }
             }
@@ -214,16 +195,10 @@ export const PUT = withAuth(
 
             // 🔥 If New Video Provided
             if (file instanceof File && file.size > 0) {
-
                 const bytes = await file.arrayBuffer();
                 const buffer = Buffer.from(bytes);
 
-                const tempPath = path.join(
-                    process.cwd(),
-                    "public",
-                    file.name
-                );
-
+                const tempPath = path.join(process.cwd(), "public", file.name);
                 await writeFile(tempPath, buffer);
 
                 const result = await uploadToYoutube(
@@ -233,17 +208,14 @@ export const PUT = withAuth(
 
                 fs.rmSync(tempPath);
 
-                // Delete old YouTube video
+                // 🔥 Delete old YouTube video
                 if (lecture.video?.public_id) {
                     try {
                         await deleteVideoFromYoutube(
                             lecture.video.public_id
                         );
                     } catch (err) {
-                        console.error(
-                            "Error deleting old YouTube video:",
-                            err
-                        );
+                        console.error("Error deleting old YouTube video:", err);
                     }
                 }
 
