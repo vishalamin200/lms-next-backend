@@ -7,7 +7,7 @@ import mongoose from "mongoose";
 import { NextRequest } from "next/server";
 
 
-export const GET = async (_req: NextRequest, {params}:{params:{id:string}}) => {
+export const GET = async (_req: NextRequest, { params }: { params: Promise<{ id: string }> }) => {
         await connectDB();
 
         try {
